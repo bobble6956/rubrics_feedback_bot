@@ -23,67 +23,87 @@ This application uses a hybrid, multi-step AI approach to ensure high-quality, a
     * The Python app parses this JSON, calculates the `Total Score` itself (ensuring 100% accuracy), and formats the final report into beautiful Markdown.
 8.  **Response:** The final, formatted Markdown is sent to the frontend and rendered for the student.
 
+---
+
 ## Project Setup & Deployment
 
-### 1. Google Cloud Prerequisites
+This project uses a hybrid approach: **Terraform** provisions the core infrastructure (GCS, IAM), the **Cloud Console** is used to manually create the data store, and a **Bash script** deploys the application code.
 
-1.  **Create a GCS Bucket:**
-    * Create a new Google Cloud Storage bucket.
-    * Upload your rubric `.pdf` files (e.g., `the_great_gastby_rubric.pdf`) to this bucket.
-2.  **Create a Vertex AI Search Data Store:**
-    * Go to the Vertex AI Search console.
-    * Create a new "Data Store" and link it to your GCS bucket.
-    * Go to the **"Configurations"** tab and **enable "Enterprise edition features"** and **"Generative Responses"**. (This can take 5-10 minutes to provision).
-    * Note your `DATA_STORE_ID`.
-3.  **Create a Service Account:**
-    * Create a service account (e.g., `essay-bot-sa`) to give Cloud Run permission to access other services.
-    * Assign the following IAM roles to this service account:
-        * `Vertex AI User` (to call Gemini)
-        * `Discovery Engine Viewer` (to use Vertex AI Search)
-        * `Storage Object Viewer` (to read the PDFs from GCS)
-        * `Cloud Run Invoker` (to be run)
-        * `Logs Writer` (for logging)
+### Prerequisites
 
-### 2. Local Development
-
-1.  Clone this repository.
-2.  Install dependencies:
-    ```
-    pip install -r requirements.txt
-    ```
-3.  Authenticate your local machine:
-    ```
+1.  [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install) installed and authenticated:
+    ```bash
+    gcloud auth login
     gcloud auth application-default login
     ```
-4.  Set your environment variables:
+2.  [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli) installed.
+3.  Your project must have the following structure:
     ```
-    export PROJECT_ID="your-gcp-project-id"
-    export DATA_STORE_ID="your-vertex-ai-datastore-id"
-    export LOCATION="global"
-    export VERTEX_AI_LOCATION="us-central1"
-    export MIN_KEYWORD_SCORE_THRESHOLD="1.0"
+    ├── app.py             <-- Your application code
+    ├── Dockerfile
+    ├── requirements.txt
+    ├── deploy.sh          <-- The deployment script
+    ├── ...
+    └── terraform/         <-- Your Terraform files
+        ├── main.tf
+        ├── variables.tf
+        ├── outputs.tf
+        ├── terraform.tfvars.example
+        └── rubrics/       <-- Your rubric PDFs go here
+            ├── gatsby.pdf
+            └── mockingbird.pdf
     ```
-5.  Run the app:
-    ```
-    python app.py
-    ```
+### Step 1: Provision Core Infrastructure (Terraform)
 
-### 3. Cloud Run Deployment
+First, we will use Terraform to create the GCS bucket, upload the rubrics, and set up the service account.
 
-This project includes a `Dockerfile` and `requirements.txt` for easy deployment.
+From within the `terraform/` directory:
 
-Run the following command, replacing the values with your own:
-```
-gcloud run deploy essay-feedback-bot
---source .
---region "us-central1"
---allow-unauthenticated
---port 8080
---timeout "120"
---service-account "essay-bot-sa@your-gcp-project-id.iam.gserviceaccount.com"
---set-env-vars "PROJECT_ID=your-gcp-project-id"
---set-env-vars "DATA_STORE_ID=your-vertex-ai-datastore-id"
---set-env-vars "LOCATION=global"
---set-env-vars "VERTEX_AI_LOCATION=us-central1"
---set-env-vars "MIN_KEYWORD_SCORE_THRESHOLD=1.0"
-```
+1.  **Create your variables file:**
+    ```bash
+    cp terraform.tfvars.example terraform.tfvars
+    ```
+2.  **Edit `terraform.tfvars`** and add your GCP project ID and a unique bucket name.
+    ```hcl
+    # terraform.tfvars
+    gcp_project_id      = "your-gcp-project-id"
+    rubrics_bucket_name = "your-unique-bucket-name-12345"
+    ```
+3.  **Run Terraform:**
+    ```bash
+    terraform init
+    terraform apply
+    ```
+    This will create the bucket, upload your PDFs, and create the `essay-bot-sa` service account.
+    
+### Step 2: Create Data Store (Manual Console Step)
+
+This is the critical manual step to create the **unstructured** data store.
+
+1.  In the Google Cloud Console, go to **Vertex AI Search**.
+2.  Select **"Create a new app"** (or use an existing one).
+3.  Select **"Create new data store"**.
+4.  Choose the **"Cloud Storage"** option (this is the one for unstructured data).
+5.  **Enter the GCS Bucket path** that Terraform created (e.g., `gs://your-unique-bucket-name-12345`).
+6.  Give your data store a **Data store name** (e.g., `essay-feedback-bot-ds`).
+7.  Set the location to **`global`**.
+8.  Click **"Create"**. The console will begin indexing your PDFs.
+9.  After it's created, go to the data store's "Data" page and **copy the `Data store ID`** (it will look something like `essay-feedback-bot-ds_1234567890123`). You will need this for the next step.
+
+### Step 3: Deploy Application (Bash Script)
+
+Now that your infrastructure is ready and your data is indexed, you can deploy the application.
+
+1.  **Set the Environment Variable:** In your terminal, set the `DATA_STORE_ID` you just copied.
+    ```bash
+    export DATA_STORE_ID="your-data-store-id-from-gcp-console"
+    ```
+2.  **Make the script executable:**
+    ```bash
+    chmod +x deploy.sh
+    ```
+3.  **Run the script:**
+    ```bash
+    ./deploy.sh
+    ```
+The script will automatically fetch all the other required values from your Terraform outputs and deploy your application to Cloud Run. Your application is now live.
