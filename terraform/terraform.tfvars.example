@@ -1,6 +1,2 @@
-project_id = "test-chatbot-edu"
-region     = "us-central1"
-
-# IMPORTANT: Update this path to where your PDF files are located locally.
-# Example: "path/to/your/rubrics"
-local_rubrics_path = "../rubrics"
+gcp_project_id = "test-chatbot-edu"
+rubrics_bucket_name = "test-chatbot-edu-bucket"
